@@ -131,16 +131,17 @@ class DashboardCronJob(CronJobBase):
 
             # select all student registered for the course
             user_sql=f"""with
-                         enroll_data as (select id as enroll_id, user_id from enrollment_dim where course_id='{data_warehouse_course_id}' 
-                                         and type = 'StudentEnrollment' and workflow_state= 'active'),
-                         user_info as (select p.unique_name,p.sis_user_id, u.name, u.id as user_id, u.global_canvas_id 
+                         enroll_data as (select id as enroll_id, user_id, type from enrollment_dim where course_id='{data_warehouse_course_id}'
+                                         and type in ('StudentEnrollment', 'TaEnrollment', 'TeacherEnrollment') and workflow_state= 'active'),
+                         user_info as (select p.unique_name,p.sis_user_id, u.name, u.id as user_id, u.global_canvas_id
                                         from pseudonym_dim p join user_dim u on u.id = p.user_id where p.sis_user_id is not null),
-                         user_enroll as (select u.unique_name, u.sis_user_id, u.name, u.user_id, e.enroll_id, 
-                                         u.global_canvas_id from enroll_data e join user_info u on e.user_id= u.user_id),
-                         course_fact as (select enrollment_id, current_score, final_score from course_score_fact 
+                         user_enroll as (select u.unique_name, u.sis_user_id, u.name, u.user_id, e.enroll_id,
+                                         u.global_canvas_id, e.type from enroll_data e join user_info u on e.user_id= u.user_id),
+                         course_fact as (select enrollment_id, current_score, final_score from course_score_fact
                                          where course_id='{data_warehouse_course_id}'),
                          final as (select u.global_canvas_id as user_id,u.name, u.sis_user_id as sis_id, u.unique_name as sis_name,
-                                   '{data_warehouse_course_id}' as course_id, c.current_score as current_grade, c.final_score as final_grade
+                                   '{data_warehouse_course_id}' as course_id, c.current_score as current_grade, c.final_score as final_grade,
+                                    u.type as enrollment_type
                                     from user_enroll u left join course_fact c on u.enroll_id= c.enrollment_id)
                          select * from final
                       """
@@ -218,7 +219,7 @@ class DashboardCronJob(CronJobBase):
                     SUBSTR(JSON_EXTRACT_SCALAR(event, '$.membership.member.id'), 29) AS user_id,
                     datetime(EVENT_TIME) as access_time
                     FROM event_store.events
-                    where JSON_EXTRACT_SCALAR(event, '$.edApp.id') = 'http://umich.instructure.com/'
+                    where JSON_EXTRACT_SCALAR(event, '$.edApp.id') = @edApp
                     and type = 'NavigationEvent'
                     and JSON_EXTRACT_SCALAR(event, '$.object.name') = 'attachment'
                     and JSON_EXTRACT_SCALAR(event, '$.action') = 'NavigatedTo'
@@ -229,6 +230,7 @@ class DashboardCronJob(CronJobBase):
             logger.debug(data_warehouse_course_ids)
             query_params = [
                 bigquery.ArrayQueryParameter('course_ids', 'STRING', data_warehouse_course_ids),
+                bigquery.ScalarQueryParameter('edApp', 'STRING', settings.BIG_QUERY_ED_APP)
             ]
             job_config = bigquery.QueryJobConfig()
             job_config.query_parameters = query_params
@@ -299,7 +301,7 @@ class DashboardCronJob(CronJobBase):
         # loop through multiple course ids
         for data_warehouse_course_id in Course.objects.get_supported_courses():
             assignment_sql = f"""with assignment_info as
-                            (select ad.due_at AS due_date,ad.due_at at time zone 'utc' at time zone 'America/New_York' as local_date,
+                            (select ad.due_at AS due_date,ad.due_at at time zone 'utc' at time zone '{settings.TIME_ZONE}' as local_date,
                             ad.title AS name,af.course_id AS course_id,af.assignment_id AS id,
                             af.points_possible AS points_possible,af.assignment_group_id AS assignment_group_id
                             from assignment_fact af inner join assignment_dim ad on af.assignment_id = ad.id where af.course_id='{data_warehouse_course_id}'

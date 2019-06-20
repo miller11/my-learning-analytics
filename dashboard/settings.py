@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     'macros',
     'debug_toolbar',
     'pinax.eventlog',
+    'rules.apps.AutodiscoverRulesConfig',
 ]
 
 # The order of this is important. It says DebugToolbar should be on top but
@@ -209,6 +210,11 @@ LOGGING = {
             'propagate': False,
             'level': config('DJANGO_LOG_LEVEL', default='INFO'),
         },
+        'rules': {
+            'handlers': ['console'],
+            'propagate': False,
+            'level': config('RULES_LOG_LEVEL', default='INFO'),
+        },
         '': {
             'level': 'WARNING',
             'handlers': ['console'],
@@ -229,7 +235,10 @@ try:
 except ImportError:
     pass
 
-AUTHENTICATION_BACKENDS = ('django_su.backends.SuBackend',)
+AUTHENTICATION_BACKENDS = (
+    'rules.permissions.ObjectPermissionBackend',
+    'django_su.backends.SuBackend',
+)
 
 #Shib
 
@@ -360,6 +369,10 @@ VIEWS_DISABLED = config('VIEWS_DISABLED', default='', cast=Csv())
 
 EARLIEST_TERM_DATE = config('EARLIEST_TERM_DATE', default='2016-11-15')
 
+# This is the ed_app field that will be used to query for Canvas file events
+
+BIG_QUERY_ED_APP = config('BIG_QUERY_ED_APP', default="http://umich.instructure.com/")
+
 # Time to run cron
 RUN_AT_TIMES = config('RUN_AT_TIMES', default="", cast= Csv())
 
@@ -382,3 +395,10 @@ MAX_DEFAULT_WEEKS = config("MAX_DEFAULT_WEEKS", default=16, cast=int)
 CLIENT_CACHE_TIME = config("CLIENT_CACHE_TIME", default=3600, cast=int)
 
 CRON_BQ_IN_LIMIT = config("CRON_BQ_IN_LIMIT", default=20, cast=int)
+
+# IMPORT LOCAL SETTINGS
+# =====================
+try:
+    from settings_local import *
+except ImportError:
+    pass
